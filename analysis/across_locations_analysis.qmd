@@ -1,0 +1,191 @@
+```{r}
+library(tidyverse)
+library(readr)
+library(scales)
+library(viridis)
+library(here)
+library(stringr)
+```
+# Helpers
+```{r}
+# Helper function to summarize data
+summarized_data <- function(data, x_var, y_var, group_var) {
+  return(data %>%
+           group_by_at(c(x_var, group_var)) %>%
+           summarise(mean_value = mean(.data[[y_var]], na.rm = TRUE),
+                     sd_value = sd(.data[[y_var]], na.rm = TRUE),
+                     n = n(),
+                     se = sd_value / sqrt(n()),
+                     ci_lower = mean_value - qt(1 - (0.05 / 2), n - 1) * se,
+                     ci_upper = mean_value + qt(1 - (0.05 / 2), n - 1) * se,
+                     .groups = 'drop')
+  )
+}
+
+# Flexible age plot function
+age_plot <- function(df_participant, 
+                     df_summary, 
+                     x_var = "age", 
+                     y_var, 
+                     group_var = "location",
+                     facet_var = NULL,
+                     plot_title,
+                     plot_subtitle = "Participant means and age means with 95% CIs",
+                     y_label,
+                     y_format = "percent", # "percent" or "number"
+                     smooth_method = "loess") {
+  
+  # Create base plot with participant-level data
+  p <- ggplot(data = df_participant, 
+              aes_string(color = group_var, x = x_var, y = y_var)) +
+    # Participant-level means
+    geom_jitter(alpha = 0.3, size = 1.5, width = 0.1) +
+    # Age-level means with 95% CI
+    geom_pointrange(data = df_summary,
+                    aes(x = .data[[x_var]], 
+                        y = mean_value,
+                        ymin = ci_lower, 
+                        ymax = ci_upper), 
+                    size = 0.8) +
+    # Smoothed trend
+    geom_smooth(aes_string(x = x_var, y = y_var),
+                method = smooth_method, se = TRUE, alpha = 0.15)
+  
+  # Add faceting
+  if (!is.null(facet_var)) {
+    if (length(facet_var) == 1) {
+      p <- p + facet_wrap(as.formula(paste("~", facet_var)), scales = "free_x")
+    } else if (length(facet_var) == 2) {
+      p <- p + facet_grid(as.formula(paste(facet_var[1], "~", facet_var[2])), 
+                          scales = "free_x")
+    }
+  } else {
+    p <- p + facet_wrap(as.formula(paste("~", group_var)), scales = "free_x")
+  }
+  
+  # Format y-axis
+  if (y_format == "percent") {
+    p <- p + scale_y_continuous(labels = percent_format(accuracy = 1))
+  } else {
+    p <- p + scale_y_continuous(labels = number_format(accuracy = 0.01))
+  }
+  
+  # Add labels and theme
+  p <- p +
+    labs(
+      title = plot_title,
+      subtitle = plot_subtitle,
+      x = "Age (years)",
+      y = y_label
+    ) +
+    scale_color_viridis_d(begin = 0, end = 0.5) +
+    theme_minimal(base_size = 12)
+  
+  # Add correlation if single facet
+  if (is.null(facet_var) || length(facet_var) == 1) {
+    p <- p + ggpubr::stat_cor(alpha = 0.4)
+  }
+  
+  return(p)
+}
+```
+
+```{r}
+df <- read.csv(here("data/clip_recognizability.csv"))
+```
+
+# Recognizability
+```{r}
+library(dplyr)
+library(ggplot2)
+library(scales)   # percent_format
+
+# 1) participant‑level means
+df_part <- df %>% 
+  group_by(participant_id, age, location) %>%      # keep location for facets
+  summarise(recognizability = mean(recognizability, na.rm = TRUE),
+            distance = mean(distance, na.rm=TRUE),
+            distance_euclidean = mean(distance_euclidan, na.rm=TRUE),
+            .groups = "drop") |> filter(age < 10)
+
+# 2) age‑wise mean + CI within each location
+df_age_rec <- summarized_data(df_part, "age", "recognizability", "location")
+
+# Create recognizability plots
+plot1 <- age_plot(
+  df_participant = df_part,
+  df_summary = df_age_rec,
+  y_var = "recognizability",
+  plot_title = "Drawing Recognizability by Age Across Locations",
+  y_label = "Recognizability (%)",
+  y_format = "percent"
+)
+
+df_part_cat <- df |>
+  group_by(participant_id, age, location, drawing_category) |>
+   summarise(recognizability = mean(recognizability, na.rm = TRUE),
+            distance = mean(distance, na.rm=TRUE),
+            distance_euclidean = mean(distance_euclidan, na.rm=TRUE),
+            .groups = "drop") |> filter(age < 10)
+
+df_age_cat <- summarized_data(df_part_cat, "age", "recognizability", c("location", "drawing_category"))
+
+plot2 <- age_plot(
+  df_participant = df_part_cat,
+  df_summary = df_age_rec,
+  y_var = "recognizability",
+  plot_title = "Drawing Recognizability by Age Across Locations and Categories",
+  plot_subtitle = "Participant means and age means with 95% CIs",
+  y_label = "Recognizability (%)",
+  facet_var=c("location", "drawing_category"),
+  y_format = "number"
+)
+```
+
+```{r}
+plot1
+plot2
+ggsave(here("data/figures/recognizability.png"),plot1)
+ggsave(here("data/figures/recognizability_by_category.png"),plot2,width = 20, height=10)
+```
+
+# Centroid distance
+```{r}
+# For distance plot with categories:
+df_age_dist <- summarized_data(df_part, "age", "distance", c("location"))
+df_age_dist_euclidean <- summarized_data(df_part, "age", "distance_euclidean", c("location"))
+df_age_dist_cat <- summarized_data(df_part_cat, "age", "distance", c("location", "drawing_category"))
+
+plot1 <- age_plot(
+  df_participant = df_part,
+  df_summary = df_age_dist_euclidean,
+  y_var = "distance_euclidean",
+  plot_title = "Drawing Euclidean distance from Centroid by Age Across Locations and Categories",
+  y_label = "Euclidean distance",
+  y_format = "number"
+)
+
+plot2 <- age_plot(
+  df_participant = df_part,
+  df_summary = df_age_dist,
+  y_var = "distance",
+  plot_title = "Drawing cosine dissimilarity from Centroid by Age Across Locations and Categories",
+  y_label = "Cosine dissimilarity",
+  y_format = "number"
+)
+
+plot3 <- age_plot(
+  df_participant = df_part_cat,
+  df_summary = df_age_dist_cat,
+  y_var = "distance",
+  plot_title = "Drawing dissimilarity from Centroid by Age Across Locations and Categories",
+  plot_subtitle = "Participant means and age means with 95% CIs",
+  y_label = "Cosine distance from centroid",
+  facet_var=c("location", "drawing_category"),
+  y_format = "number"
+)
+```
+
+```{r}
+plot3
+```
