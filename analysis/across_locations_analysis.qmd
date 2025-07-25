@@ -132,7 +132,7 @@ df_age_cat <- summarized_data(df_part_cat, "age", "recognizability", c("location
 
 plot2 <- age_plot(
   df_participant = df_part_cat,
-  df_summary = df_age_rec,
+  df_summary = df_age_cat,
   y_var = "recognizability",
   plot_title = "Drawing Recognizability by Age Across Locations and Categories",
   plot_subtitle = "Participant means and age means with 95% CIs",
@@ -160,7 +160,7 @@ plot1 <- age_plot(
   df_participant = df_part,
   df_summary = df_age_dist_euclidean,
   y_var = "distance_euclidean",
-  plot_title = "Drawing Euclidean distance from Centroid by Age Across Locations and Categories",
+  plot_title = "Drawing Euclidean distance from Centroid by Age\n Across Locations and Categories",
   y_label = "Euclidean distance",
   y_format = "number"
 )
@@ -169,7 +169,7 @@ plot2 <- age_plot(
   df_participant = df_part,
   df_summary = df_age_dist,
   y_var = "distance",
-  plot_title = "Drawing cosine dissimilarity from Centroid by Age Across Locations and Categories",
+  plot_title = "Drawing cosine dissimilarity from Centroid by Age\n Across Locations and Categories",
   y_label = "Cosine dissimilarity",
   y_format = "number"
 )
@@ -178,7 +178,7 @@ plot3 <- age_plot(
   df_participant = df_part_cat,
   df_summary = df_age_dist_cat,
   y_var = "distance",
-  plot_title = "Drawing dissimilarity from Centroid by Age Across Locations and Categories",
+  plot_title = "Drawing dissimilarity from Centroid by Age\n Across Locations and Categories",
   plot_subtitle = "Participant means and age means with 95% CIs",
   y_label = "Cosine distance from centroid",
   facet_var=c("location", "drawing_category"),
@@ -187,5 +187,6 @@ plot3 <- age_plot(
 ```
 
 ```{r}
-plot3
+ggsave(here("data/figures/centroid_distance.png"),plot2)
+ggsave(here("data/figures/centroid_distance_by_category.png"),plot3,width = 20, height=10)
 ```
