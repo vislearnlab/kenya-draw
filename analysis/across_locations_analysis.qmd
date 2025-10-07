@@ -1,3 +1,14 @@
+---
+title: "Comparing drawings across contexts"
+date: "`r Sys.Date()`"
+format:
+  html:
+    toc: true
+    toc-depth: 3       
+    toc-location: left 
+    toc-expand: true   
+---
+
 ```{r}
 library(tidyverse)
 library(readr)
@@ -6,6 +17,7 @@ library(viridis)
 library(here)
 library(stringr)
 ```
+
 # Helpers
 ```{r}
 # Helper function to summarize data
@@ -32,7 +44,7 @@ age_plot <- function(df_participant,
                      plot_title,
                      plot_subtitle = "Participant means and age means with 95% CIs",
                      y_label,
-                     y_format = "percent", # "percent" or "number"
+                     y_format = "number", # "percent" or "number"
                      smooth_method = "loess") {
   
   # Create base plot with participant-level data
@@ -50,17 +62,19 @@ age_plot <- function(df_participant,
     # Smoothed trend
     geom_smooth(aes_string(x = x_var, y = y_var),
                 method = smooth_method, se = TRUE, alpha = 0.15)
+  #+coord_cartesian(ylim = c(NA, 1))
   
-  # Add faceting
+  # Add faceting - all plots in single row
   if (!is.null(facet_var)) {
     if (length(facet_var) == 1) {
-      p <- p + facet_wrap(as.formula(paste("~", facet_var)), scales = "free_x")
+      p <- p + facet_wrap(as.formula(paste("~", facet_var)), 
+                          scales = "free_x", nrow = 1)
     } else if (length(facet_var) == 2) {
       p <- p + facet_grid(as.formula(paste(facet_var[1], "~", facet_var[2])), 
                           scales = "free_x")
     }
   } else {
-    p <- p + facet_wrap(as.formula(paste("~", group_var)), scales = "free_x")
+    p <- p + facet_wrap(as.formula(paste("~", group_var)), nrow = 1)
   }
   
   # Format y-axis
@@ -79,22 +93,36 @@ age_plot <- function(df_participant,
       y = y_label
     ) +
     scale_color_viridis_d(begin = 0, end = 0.5) +
-    theme_minimal(base_size = 12)
+    theme_classic(base_size = 12)
   
   # Add correlation if single facet
-  if (is.null(facet_var) || length(facet_var) == 1) {
-    p <- p + ggpubr::stat_cor(alpha = 0.4)
-  }
+  #if (is.null(facet_var) || length(facet_var) == 1) {
+  #  p <- p + ggpubr::stat_cor(alpha = 0.4)
+  #}
   
   return(p)
 }
 ```
 
+
 ```{r}
-df <- read.csv(here("data/clip_recognizability.csv"))
+df <- read.csv(here("data/clip_recognizability_final.csv")) |>
+  filter(drawing_category %in% c("airplane", "bike", "bird", "hat", "rabbit", "watch",
+                                 "cat", "house", "cup", "chair", "tree", "car")) |>
+  group_by(location, age) |>
+  filter(n_distinct(participant_id) > 3) |>
+  mutate(location = case_when(
+    location == "India" ~ "New Delhi",
+    location == "USA" ~ "San Jose",
+    TRUE ~ location
+  )) |>
+    rename(distance_SanJose = distance_USA,
+         distance_NewDelhi = distance_India) 
+
 ```
 
-# Recognizability
+# Recognizability of drawings
+Quantified using CLIP
 ```{r}
 library(dplyr)
 library(ggplot2)
@@ -102,61 +130,68 @@ library(scales)   # percent_format
 
 # 1) participant‑level means
 df_part <- df %>% 
-  group_by(participant_id, age, location) %>%      # keep location for facets
-  summarise(recognizability = mean(recognizability, na.rm = TRUE),
-            distance = mean(distance, na.rm=TRUE),
-            distance_euclidean = mean(distance_euclidan, na.rm=TRUE),
-            .groups = "drop") |> filter(age < 10)
+  group_by(participant_id, age, location) %>%  # keep location for facets
+  summarise(
+    recognizability = mean(recognizability, na.rm = TRUE),
+    across(starts_with("distance"), ~ mean(.x, na.rm = TRUE)),
+    .groups = "drop"
+  ) %>%
+  filter(age < 10)
 
 # 2) age‑wise mean + CI within each location
 df_age_rec <- summarized_data(df_part, "age", "recognizability", "location")
 
 # Create recognizability plots
-plot1 <- age_plot(
+rec.plot1 <- age_plot(
   df_participant = df_part,
   df_summary = df_age_rec,
   y_var = "recognizability",
   plot_title = "Drawing Recognizability by Age Across Locations",
-  y_label = "Recognizability (%)",
-  y_format = "percent"
+  y_label = "Recognizability",
+  y_format = "number"
 )
 
 df_part_cat <- df |>
   group_by(participant_id, age, location, drawing_category) |>
    summarise(recognizability = mean(recognizability, na.rm = TRUE),
-            distance = mean(distance, na.rm=TRUE),
-            distance_euclidean = mean(distance_euclidan, na.rm=TRUE),
+            across(starts_with("distance"), ~ mean(.x, na.rm = TRUE)),
             .groups = "drop") |> filter(age < 10)
 
 df_age_cat <- summarized_data(df_part_cat, "age", "recognizability", c("location", "drawing_category"))
 
-plot2 <- age_plot(
+rec.plot2 <- age_plot(
   df_participant = df_part_cat,
   df_summary = df_age_cat,
   y_var = "recognizability",
   plot_title = "Drawing Recognizability by Age Across Locations and Categories",
   plot_subtitle = "Participant means and age means with 95% CIs",
-  y_label = "Recognizability (%)",
+  y_label = "Recognizability",
   facet_var=c("location", "drawing_category"),
   y_format = "number"
 )
 ```
 
+## Regognizability across categories
 ```{r}
-plot1
-plot2
-ggsave(here("data/figures/recognizability.png"),plot1)
-ggsave(here("data/figures/recognizability_by_category.png"),plot2,width = 20, height=10)
+rec.plot1
+ggsave(here("data/figures/recognizability.svg"),rec.plot1, bg="white", device="pdf")
 ```
 
-# Centroid distance
+## Recognizability within categories
+```{r figure1, fig.width=15, fig.height=6}
+rec.plot2
+ggsave(here("data/figures/recognizability_by_category_sites.png"),rec.plot2,width = 20, height=10, bg="white")
+```
+
+# Centroid distance 
+Quantifying how similar the drawings are one to another. Lower values indicate drawings are more consistent within that bucket.
 ```{r}
 # For distance plot with categories:
 df_age_dist <- summarized_data(df_part, "age", "distance", c("location"))
 df_age_dist_euclidean <- summarized_data(df_part, "age", "distance_euclidean", c("location"))
 df_age_dist_cat <- summarized_data(df_part_cat, "age", "distance", c("location", "drawing_category"))
 
-plot1 <- age_plot(
+centroid.plot1 <- age_plot(
   df_participant = df_part,
   df_summary = df_age_dist_euclidean,
   y_var = "distance_euclidean",
@@ -165,7 +200,7 @@ plot1 <- age_plot(
   y_format = "number"
 )
 
-plot2 <- age_plot(
+centroid.plot2 <- age_plot(
   df_participant = df_part,
   df_summary = df_age_dist,
   y_var = "distance",
@@ -174,7 +209,7 @@ plot2 <- age_plot(
   y_format = "number"
 )
 
-plot3 <- age_plot(
+centroid.plot3 <- age_plot(
   df_participant = df_part_cat,
   df_summary = df_age_dist_cat,
   y_var = "distance",
@@ -186,7 +221,141 @@ plot3 <- age_plot(
 )
 ```
 
+## euclidean distance
 ```{r}
-ggsave(here("data/figures/centroid_distance.png"),plot2)
-ggsave(here("data/figures/centroid_distance_by_category.png"),plot3,width = 20, height=10)
+centroid.plot1
+```
+
+## cosine distance
+```{r}
+centroid.plot2
+ggsave(here("data/figures/centroid_distance_sites.png"),centroid.plot2, bg="white")
+```
+
+## cosine distance within categories
+```{r figure, fig.width=14, fig.height=6}
+centroid.plot3
+ggsave(here("data/figures/centroid_distance_by_category_sites.png"),centroid.plot3,width = 20, height=10, bg="white")
+```
+## centroid distance across sites
+```{r}
+df_long <- df_part %>%
+  select(location, age, participant_id, 
+         distance_Beijing, distance_SanJose, distance_NewDelhi, distance_Kisumu) %>%
+  pivot_longer(cols = starts_with("distance_"), 
+               names_to = "distance_type", 
+               values_to = "distance_value") %>%
+  mutate(distance_type = gsub("distance_", "", distance_type))
+
+df_site_dist <- summarized_data(df_long, "age", "distance_value", c("location", "distance_type"))
+
+# Create the plot
+plot.site.age <- ggplot(data = df_long, 
+       aes(x = age, y = distance_value, color = distance_type)) +
+  # Individual participant points
+  geom_jitter(alpha = 0.1, size = 1, width = 0.2) +
+  geom_pointrange(data = df_site_dist,
+                    aes(x = age, 
+                        y = mean_value,
+                        ymin = ci_lower, 
+                        ymax = ci_upper), 
+                    size = 0.6) +  # Smoothed trend lines for each distance type
+  geom_smooth(method = "loess", se = TRUE, alpha = 0.1) +
+  # Facet by location
+  facet_wrap(~location, nrow = 1, scales = "free_x") +
+  # Format y-axis
+  scale_y_continuous(labels = number_format(accuracy = 0.01)) +
+  # Color scale
+  scale_color_viridis_d(name = "Distance to:", 
+                        begin = 0, end = 0.8) +
+  # Labels and theme
+  labs(
+    title = "Drawing cosine dissimilarity to site centroid by age and site",
+    x = "Age (years)",
+    y = "Cosine dissimilarity"
+  ) +
+  theme_classic(base_size = 12) +
+  theme(legend.position = "bottom")
+plot.site.age
+ggsave(here("figures/centroid_crosssite.png"), plot.site.age)
+```
+
+```{r}
+df_long <- df %>%
+  select(location, age, participant_id, drawing_category, 
+         distance_Beijing, distance_SanJose, distance_NewDelhi, distance_Kisumu) %>%
+  pivot_longer(cols = starts_with("distance_"), 
+               names_to = "distance_type", 
+               values_to = "distance_value") %>%
+  mutate(distance_type = gsub("distance_", "", distance_type))
+
+
+# Create the plot
+ggplot(data = df_long |> filter(drawing_category %in% c("tree")),
+       aes(x = age, y = distance_value, color = distance_type)) +
+  # Individual participant points
+  geom_jitter(alpha = 0.3, size = 1.5, width = 0.1) +
+  # Smoothed trend lines for each distance type
+  geom_smooth(method = "loess", se = TRUE, alpha = 0.15) +
+  # Facet by location and category
+  facet_grid(drawing_category ~ location, scales = "free_x") +
+  # Format y-axis
+  scale_y_continuous(labels = number_format(accuracy = 0.01)) +
+  # Color scale
+  scale_color_viridis_d(name = "Distance to:", 
+                        begin = 0, end = 0.8) +
+  # Labels and theme
+  labs(
+    title = "Drawing Cosine Dissimilarity by Age, Distance Type, Location and Category",
+    subtitle = "Separate trend lines for distance to each location centroid, faceted by category and location",
+    x = "Age (years)",
+    y = "Cosine dissimilarity"
+  ) +
+  theme_classic(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+## zoomed in
+```{r}
+
+# First, check what the unique values are to know what you're selecting
+#unique(df$drawing_category)  # to see category options
+#unique(df$location)          # to see location options
+#target_category <- sort(unique(df$drawing_category))[1]  # first category
+#target_location <- sort(unique(df$location))[1]          # first location
+
+# Filter and reshape data for the specific facet
+#df_filtered <- df %>%
+#  # filter(drawing_category == target_category, 
+#  #        location == target_location) %>%
+#   select(location, age, participant_id, drawing_category, 
+#          distance_Beijing, distance_Kisumu, distance_SanJose, distance_NewDelhi) %>%
+#   pivot_longer(cols = starts_with("distance_"), 
+#                names_to = "distance_type", 
+#                values_to = "distance_value") %>%
+#   mutate(distance_type = gsub("distance_", "", distance_type))
+# 
+# # Create the zoomed plot for just this facet
+# ggplot(data = df_filtered, 
+#        aes(x = age, y = distance_value, color = distance_type)) +
+#   # Individual participant points
+#   geom_jitter(alpha = 0.5, size = 2, width = 0.1) +
+#   # Smoothed trend lines for each distance type
+#   geom_smooth(method = "loess", se = TRUE, alpha = 0.2, size = 1.2) +
+#   # Format y-axis
+#   scale_y_continuous(labels = number_format(accuracy = 0.01)) +
+#   # Color scale
+#   scale_color_viridis_d(name = "Distance to:", 
+#                         begin = 0, end = 0.8) +
+#   # Labels and theme
+#   labs(
+#     title = paste0("Drawing Cosine Dissimilarity: ", target_category, " in ", target_location),
+#     subtitle = "Zoomed view of single facet with trend lines for each distance type",
+#     x = "Age (years)",
+#     y = "Cosine dissimilarity"
+#   ) +
+#   theme_classic(base_size = 14) +
+#   theme(legend.position = "right")
+#   # Optional: add correlation statistics
+#   # ggpubr::stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
+#   #                  label.x.npc = "left", label.y.npc = "top", size = 3)
 ```
